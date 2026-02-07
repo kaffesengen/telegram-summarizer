@@ -3,37 +3,245 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Telegram Bot Portal</title>
+    <title>Bot Konfigurator</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #f8f9fa; padding: 20px; }
-        .card { max-width: 500px; margin: 0 auto; margin-top: 50px; }
-        #dashboard, #loading { display: none; }
+        body { background-color: #f0f2f5; padding: 20px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .card { max-width: 800px; margin: 0 auto; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-radius: 12px; }
+        .group-item { background: #fff; border: 1px solid #dee2e6; padding: 15px; border-radius: 8px; margin-bottom: 10px; }
+        h4 { color: #333; margin-top: 20px; }
     </style>
 </head>
 <body>
 
-    <div id="login-screen" class="card shadow">
-        <div class="card-body">
-            <h3 class="card-title text-center mb-4">Logg inn</h3>
-            <div class="mb-3">
-                <input type="email" id="email" class="form-control" placeholder="E-post">
-            </div>
-            <div class="mb-3">
-                <input type="password" id="password" class="form-control" placeholder="Passord">
-            </div>
-            <button onclick="login()" class="btn btn-primary w-100">Logg inn</button>
-            <p class="text-center mt-3"><small>Kontakt admin for bruker.</small></p>
-        </div>
+    <div id="login-screen" class="card p-4 mt-5" style="max-width: 400px;">
+        <h3 class="text-center mb-4">Logg inn</h3>
+        <input type="email" id="email" class="form-control mb-3" placeholder="E-post">
+        <input type="password" id="password" class="form-control mb-3" placeholder="Passord">
+        <button onclick="login()" class="btn btn-primary w-100">Logg inn</button>
     </div>
 
-    <div id="dashboard" class="card shadow">
-        <div class="card-body">
-            <h3 class="card-title text-center">Dine Innstillinger</h3>
-            <p class="text-muted text-center">Konfigurer din nyhetsagent</p>
-            <hr>
+    <div id="dashboard" class="card p-4" style="display: none;">
+        <div class="d-flex justify-content-between align-items-center">
+            <h3>🤖 Mine Innstillinger</h3>
+            <button onclick="logout()" class="btn btn-outline-danger btn-sm">Logg ut</button>
+        </div>
+        <hr>
+
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-bold">Telegram ID</label>
+                <input type="text" id="telegram-id" class="form-control" placeholder="12345678">
+            </div>
+            <div class="col-md-6 mb-3">
+                <label class="form-label fw-bold">Interessefelt (Keywords)</label>
+                <input type="text" id="keywords" class="form-control" placeholder="Lyd, Lys, Video...">
+            </div>
+        </div>
+
+        <hr>
+
+        <h4 class="mb-3">📅 Standard Tidsplan</h4>
+        <p class="text-muted small">Dette gjelder alle grupper med mindre du overstyrer dem nedenfor.</p>
+        <div class="row g-2 align-items-end" id="global-schedule-container">
+            </div>
+
+        <hr>
+
+        <h4 class="mb-3">📢 Grupper & Unntak</h4>
+        <p class="text-muted small">Her ser du grupper boten har oppdaget. Du kan sette egen frekvens per gruppe.</p>
+        <div id="groups-list">
+            <div class="text-center py-3"><div class="spinner-border text-primary"></div><br>Laster grupper...</div>
+        </div>
+
+        <button onclick="saveData()" class="btn btn-success w-100 mt-4 py-2 fw-bold">LAGRE ALLE ENDRINGER</button>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, collection, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // --- KONFIGURASJON ---
+        // LIM INN SAMME TALL SOM SIST HER:
+        const firebaseConfig = {
+            apiKey: "DINE_TALL_HER",
+            authDomain: "DITT_PROSJEKT.firebaseapp.com",
+            projectId: "DITT_PROSJEKT",
+            storageBucket: "DITT_PROSJEKT.appspot.com",
+            messagingSenderId: "TALL",
+            appId: "TALL"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // --- HTML KOMPONENTER ---
+        
+        function createScheduleInputs(prefix, data = {}) {
+            const freq = data.frequency || 'daily';
+            const time = data.time || '08:00';
+            const day = data.day || 'monday';
+
+            return `
+            <div class="col-4">
+                <label class="small text-muted">Hvor ofte?</label>
+                <select class="form-select" id="${prefix}-freq" onchange="toggleDay('${prefix}')">
+                    <option value="daily" ${freq === 'daily' ? 'selected' : ''}>Hver dag</option>
+                    <option value="weekly" ${freq === 'weekly' ? 'selected' : ''}>Hver uke</option>
+                    <option value="monthly" ${freq === 'monthly' ? 'selected' : ''}>Hver måned (d. 1.)</option>
+                </select>
+            </div>
+            <div class="col-4" id="${prefix}-day-div" style="display: ${freq === 'weekly' ? 'block' : 'none'};">
+                <label class="small text-muted">Hvilken dag?</label>
+                <select class="form-select" id="${prefix}-day">
+                    <option value="monday" ${day === 'monday' ? 'selected' : ''}>Mandag</option>
+                    <option value="tuesday" ${day === 'tuesday' ? 'selected' : ''}>Tirsdag</option>
+                    <option value="wednesday" ${day === 'wednesday' ? 'selected' : ''}>Onsdag</option>
+                    <option value="thursday" ${day === 'thursday' ? 'selected' : ''}>Torsdag</option>
+                    <option value="friday" ${day === 'friday' ? 'selected' : ''}>Fredag</option>
+                    <option value="saturday" ${day === 'saturday' ? 'selected' : ''}>Lørdag</option>
+                    <option value="sunday" ${day === 'sunday' ? 'selected' : ''}>Søndag</option>
+                </select>
+            </div>
+            <div class="col-4">
+                <label class="small text-muted">Klokkeslett</label>
+                <select class="form-select" id="${prefix}-time">
+                    ${[...Array(24).keys()].map(i => {
+                        const t = i.toString().padStart(2, '0') + ":00";
+                        return `<option value="${t}" ${time === t ? 'selected' : ''}>${t}</option>`;
+                    }).join('')}
+                </select>
+            </div>
+            `;
+        }
+
+        window.toggleDay = (prefix) => {
+            const freq = document.getElementById(`${prefix}-freq`).value;
+            const dayDiv = document.getElementById(`${prefix}-day-div`);
+            if(dayDiv) dayDiv.style.display = (freq === 'weekly') ? 'block' : 'none';
+        }
+
+        // --- AUTH ---
+        window.login = async () => {
+            try {
+                await signInWithEmailAndPassword(auth, document.getElementById('email').value, document.getElementById('password').value);
+            } catch (e) { alert("Feil: " + e.message); }
+        };
+        window.logout = () => signOut(auth);
+
+        // --- LOAD DATA ---
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
+                await loadDashboard(user);
+            } else {
+                document.getElementById('login-screen').style.display = 'block';
+                document.getElementById('dashboard').style.display = 'none';
+            }
+        });
+
+        async function loadDashboard(user) {
+            // 1. Hent brukerdata
+            const userDoc = await getDoc(doc(db, "users", user.uid));
+            const userData = userDoc.exists() ? userDoc.data() : {};
             
-            <div class="mb-3">
+            document.getElementById('telegram-id').value = userData.telegram_id || "";
+            document.getElementById('keywords').value = userData.keywords || "";
+            
+            // Tegn Global Schedule
+            document.getElementById('global-schedule-container').innerHTML = createScheduleInputs('global', userData.schedule);
+
+            // 2. Hent liste over kjente grupper
+            const groupsSnap = await getDocs(collection(db, "known_groups"));
+            const listDiv = document.getElementById('groups-list');
+            listDiv.innerHTML = "";
+
+            if (groupsSnap.empty) {
+                listDiv.innerHTML = "<div class='alert alert-warning'>Boten har ikke sett noen grupper enda. Legg boten til i en gruppe og send en melding der først!</div>";
+                return;
+            }
+
+            const overrides = userData.group_schedules || {};
+
+            groupsSnap.forEach(gDoc => {
+                const gData = gDoc.data();
+                const gId = gDoc.id;
+                const gOverride = overrides[gId] || { frequency: 'default' }; // Default betyr "Bruk global"
+
+                // Lag HTML for hver gruppe
+                const isDefault = gOverride.frequency === 'default';
+                
+                const html = `
+                <div class="group-item">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <strong style="font-size: 1.1em;">${gData.name || "Ukjent Gruppe"}</strong>
+                        <span class="badge bg-secondary">${gId}</span>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="check-${gId}" 
+                            ${!isDefault ? 'checked' : ''} onchange="toggleGroupOverride('${gId}')">
+                        <label class="form-check-label" for="check-${gId}">Overstyr standard tid for denne gruppen</label>
+                    </div>
+                    
+                    <div id="override-container-${gId}" class="row g-2 mt-2" style="display: ${!isDefault ? 'flex' : 'none'}; background: #f8f9fa; padding: 10px; border-radius: 5px;">
+                        ${createScheduleInputs('group-'+gId, !isDefault ? gOverride : {})}
+                    </div>
+                </div>
+                `;
+                listDiv.innerHTML += html;
+            });
+        }
+
+        window.toggleGroupOverride = (gId) => {
+            const isChecked = document.getElementById(`check-${gId}`).checked;
+            document.getElementById(`override-container-${gId}`).style.display = isChecked ? 'flex' : 'none';
+        }
+
+        // --- SAVE DATA ---
+        window.saveData = async () => {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            // Hjelper for å hente verdier fra input-settet vårt
+            const getScheduleFromInputs = (prefix) => {
+                return {
+                    frequency: document.getElementById(`${prefix}-freq`).value,
+                    time: document.getElementById(`${prefix}-time`).value,
+                    day: document.getElementById(`${prefix}-day`).value
+                };
+            };
+
+            const globalSched = getScheduleFromInputs('global');
+            
+            // Samle overrides
+            const groupSchedules = {};
+            const groupChecks = document.querySelectorAll('[id^="check-"]');
+            groupChecks.forEach(checkbox => {
+                if (checkbox.checked) {
+                    const gId = checkbox.id.replace('check-', '');
+                    groupSchedules[gId] = getScheduleFromInputs('group-'+gId);
+                }
+            });
+
+            try {
+                await setDoc(doc(db, "users", user.uid), {
+                    email: user.email,
+                    telegram_id: document.getElementById('telegram-id').value,
+                    keywords: document.getElementById('keywords').value,
+                    schedule: globalSched,
+                    group_schedules: groupSchedules
+                }, { merge: true });
+                alert("✅ Alt lagret! Boten vil nå følge din nye tidsplan.");
+            } catch (error) {
+                alert("Feil: " + error.message);
+            }
+        };
+    </script>
+</body>
+</html>
                 <label class="form-label">Din Telegram ID:</label>
                 <input type="text" id="telegram-id" class="form-control" placeholder="F.eks. 12345678">
                 <div class="form-text">Send melding til @userinfobot på Telegram for å finne din ID.</div>
