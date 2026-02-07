@@ -5,7 +5,4 @@ apscheduler
 flask
 gunicorn
 pytz
-# Tvangstrøyer for å stoppe kranglingen:
-urllib3==1.26.18
-rsa>=4.9
-typing-extensions>=4.9.0
+urllib3<2.0.0
