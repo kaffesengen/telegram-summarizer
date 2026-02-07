@@ -1,7 +1,8 @@
-python-telegram-bot
-firebase-admin
-google-generativeai
-apscheduler
-flask
-gunicorn
-pytz
+python-telegram-bot==20.8
+firebase-admin==6.4.0
+google-generativeai==0.3.2
+apscheduler==3.10.4
+flask==3.0.2
+gunicorn==21.2.0
+pytz==2024.1
+urllib3<2.0.0
