@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Telegram Bot Portal</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; padding: 20px; }
+        .card { max-width: 500px; margin: 0 auto; margin-top: 50px; }
+        #dashboard, #loading { display: none; }
+    </style>
+</head>
+<body>
+
+    <div id="login-screen" class="card shadow">
+        <div class="card-body">
+            <h3 class="card-title text-center mb-4">Logg inn</h3>
+            <div class="mb-3">
+                <input type="email" id="email" class="form-control" placeholder="E-post">
+            </div>
+            <div class="mb-3">
+                <input type="password" id="password" class="form-control" placeholder="Passord">
+            </div>
+            <button onclick="login()" class="btn btn-primary w-100">Logg inn</button>
+            <p class="text-center mt-3"><small>Kontakt admin for bruker.</small></p>
+        </div>
+    </div>
+
+    <div id="dashboard" class="card shadow">
+        <div class="card-body">
+            <h3 class="card-title text-center">Dine Innstillinger</h3>
+            <p class="text-muted text-center">Konfigurer din nyhetsagent</p>
+            <hr>
+            
+            <div class="mb-3">
+                <label class="form-label">Din Telegram ID:</label>
+                <input type="text" id="telegram-id" class="form-control" placeholder="F.eks. 12345678">
+                <div class="form-text">Send melding til @userinfobot på Telegram for å finne din ID.</div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label">Dine interessefelt (Nøkkelord):</label>
+                <textarea id="keywords" class="form-control" rows="3" placeholder="F.eks: Lyd, lys, video, rigg"></textarea>
+                <div class="form-text">Boten vil kun sende deg oppsummeringer om dette.</div>
+            </div>
+
+            <button onclick="saveData()" class="btn btn-success w-100">Lagre Endringer</button>
+            <button onclick="logout()" class="btn btn-outline-secondary w-100 mt-2">Logg ut</button>
+        </div>
+    </div>
+
+    <script type="module">
+        // Importerer Firebase-funksjoner direkte fra nettet
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // --- KONFIGURASJON ---
+        // BYTT UT DETTE MED DIN EGEN FRA FIREBASE CONSOLE:
+        const firebaseConfig = {
+            apiKey: "DINE_TALL_HER",
+            authDomain: "DITT_PROSJEKT.firebaseapp.com",
+            projectId: "DITT_PROSJEKT",
+            storageBucket: "DITT_PROSJEKT.appspot.com",
+            messagingSenderId: "TALL",
+            appId: "TALL"
+        };
+
+        // Starter Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Globale funksjoner (så knappene finner dem)
+        window.login = async () => {
+            const e = document.getElementById('email').value;
+            const p = document.getElementById('password').value;
+            try {
+                await signInWithEmailAndPassword(auth, e, p);
+            } catch (error) {
+                alert("Feil ved innlogging: " + error.message);
+            }
+        };
+
+        window.logout = () => signOut(auth);
+
+        window.saveData = async () => {
+            const user = auth.currentUser;
+            if (!user) return;
+            
+            const tid = document.getElementById('telegram-id').value;
+            const kw = document.getElementById('keywords').value;
+
+            try {
+                // Lagrer til 'users'-samlingen med brukerens unike ID
+                await setDoc(doc(db, "users", user.uid), {
+                    email: user.email,
+                    telegram_id: tid,
+                    keywords: kw
+                }, { merge: true });
+                alert("Lagret!");
+            } catch (error) {
+                alert("Kunne ikke lagre: " + error.message);
+            }
+        };
+
+        // Lytter: Er bruker logget inn eller ut?
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                // Bruker er logget inn -> Vis dashboard
+                document.getElementById('login-screen').style.display = 'none';
+                document.getElementById('dashboard').style.display = 'block';
+                
+                // Hent eksisterende data
+                const docSnap = await getDoc(doc(db, "users", user.uid));
+                if (docSnap.exists()) {
+                    document.getElementById('telegram-id').value = docSnap.data().telegram_id || "";
+                    document.getElementById('keywords').value = docSnap.data().keywords || "";
+                }
+            } else {
+                // Bruker er logget ut -> Vis login
+                document.getElementById('login-screen').style.display = 'block';
+                document.getElementById('dashboard').style.display = 'none';
+            }
+        });
+    </script>
+</body>
+</html>
