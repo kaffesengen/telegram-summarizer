@@ -1,0 +1,7 @@
+python-telegram-bot
+firebase-admin
+google-generativeai
+apscheduler
+flask
+gunicorn
+pytz
